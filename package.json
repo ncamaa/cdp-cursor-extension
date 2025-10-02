@@ -1,0 +1,81 @@
+{
+  "name": "cdp-debug-cursor",
+  "displayName": "CDP Debug for Cursor",
+  "description": "Chrome DevTools Protocol debugging integration for Cursor AI - automatically capture and query console logs and network requests",
+  "version": "0.1.0",
+  "publisher": "cdp-debug",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "cursor",
+    "chrome",
+    "debug",
+    "devtools",
+    "cdp",
+    "ai",
+    "logging"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cdp-debug.openChromeWithConnection",
+        "title": "CDP: Open Chrome With Cursor Connection"
+      },
+      {
+        "command": "cdp-debug.stopConnection",
+        "title": "CDP: Stop Connection"
+      },
+      {
+        "command": "cdp-debug.initProject",
+        "title": "CDP: Initialize Project"
+      },
+      {
+        "command": "cdp-debug.openServerDashboard",
+        "title": "CDP: Open Server Dashboard"
+      }
+    ],
+    "configuration": {
+      "title": "CDP Debug",
+      "properties": {
+        "cdpDebug.autoInitProjects": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically prompt to initialize CDP Debug for new projects"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.33.3",
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.3.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ncamaa/cdp-cursor-extension.git"
+  },
+  "license": "MIT"
+}
