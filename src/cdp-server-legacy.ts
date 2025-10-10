@@ -243,15 +243,32 @@ class CDPDebugServer {
 
   private async findTarget(): Promise<any> {
     const targets = await CDP.List({ port: this.cdpPort });
-    const target = targets.find((t: any) => 
-      t.type === 'page' && (
-        this.targetPattern.test(t.title) || 
-        this.targetPattern.test(t.url)
-      )
+    
+    // Filter out DevTools tabs and chrome:// URLs
+    const pageTargets = targets.filter((t: any) => 
+      t.type === 'page' && 
+      !t.url.startsWith('devtools://') && 
+      !t.url.startsWith('chrome://') &&
+      !t.url.startsWith('chrome-extension://')
     );
+    
+    // Find target matching pattern, or use first available page
+    let target = pageTargets.find((t: any) => 
+      this.targetPattern.test(t.title) || 
+      this.targetPattern.test(t.url)
+    );
+    
+    // If no pattern match, use the first real page tab
+    if (!target && pageTargets.length > 0) {
+      target = pageTargets[0];
+      console.log(`🎯 No pattern match, using first available tab: ${target.title}`);
+    }
 
     if (!target) {
-      console.error(`❌ No target found matching: ${this.targetPattern.source}`);
+      console.error(`❌ No target found. Available targets:`);
+      targets.forEach((t: any) => {
+        console.log(`  - ${t.id}: ${t.title} (${t.url})`);
+      });
       return null;
     }
 

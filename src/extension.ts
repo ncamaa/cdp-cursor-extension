@@ -1,10 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import CDPDebugServer from './cdp-server';
+import { spawn, ChildProcess } from 'child_process';
+import CDPMCPServer from './cdp-mcp-server';
+import CDPDebugServer from './cdp-server-legacy'; // Keep legacy for reference
 import ChromeLauncher from './chrome-launcher';
+import { CursorMCPConfigurator } from './cursor-mcp-config';
 
-let cdpServer: CDPDebugServer | null = null;
+let mcpServer: CDPMCPServer | null = null;
+let mcpProcess: ChildProcess | null = null;
+let legacyServer: CDPDebugServer | null = null; // For fallback
 let chromeLauncher: ChromeLauncher | null = null;
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
@@ -15,6 +20,9 @@ export function activate(context: vscode.ExtensionContext) {
     // Create output channel for server logs
     outputChannel = vscode.window.createOutputChannel('CDP Debug Server');
     context.subscriptions.push(outputChannel);
+
+    // Initialize MCP configurator
+    const mcpConfigurator = new CursorMCPConfigurator(context.extensionPath);
 
     // Create status bar item
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -29,6 +37,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('cdp-debug.openChromeWithConnection', openChromeWithConnection),
         vscode.commands.registerCommand('cdp-debug.stopConnection', stopConnection),
         vscode.commands.registerCommand('cdp-debug.initProject', initProject),
+        vscode.commands.registerCommand('cdp-debug.copyMCPConfig', () => copyMCPConfiguration(context)),
         vscode.commands.registerCommand('cdp-debug.openServerDashboard', openServerDashboard)
     );
 
@@ -115,7 +124,7 @@ async function initProject() {
 }
 
 async function openChromeWithConnection() {
-    if (cdpServer && chromeLauncher) {
+    if (mcpServer && legacyServer && chromeLauncher) {
         vscode.window.showWarningMessage('CDP Debug is already running');
         return;
     }
@@ -136,58 +145,131 @@ async function openChromeWithConnection() {
         // Wait a moment for Chrome to fully start
         await new Promise(resolve => setTimeout(resolve, 3000));
 
-        // Step 2: Start CDP Server
-        outputChannel.appendLine('🔧 Starting CDP Debug Server...');
-        cdpServer = new CDPDebugServer(3100, 9222, '.*');
+        // Step 2: Check and configure MCP if needed
+        const mcpConfigurator = new CursorMCPConfigurator(vscode.extensions.getExtension('cdp-debug.cdp-debug-cursor')?.extensionPath || __dirname);
+        const isMCPConfigured = await mcpConfigurator.isConfigured();
         
-        // Redirect server logs to output channel
-        const originalConsoleLog = console.log;
-        const originalConsoleError = console.error;
-        
-        console.log = (message: any, ...args: any[]) => {
-            outputChannel.appendLine(String(message));
-            if (args.length > 0) {
-                outputChannel.appendLine(args.map(arg => 
-                    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-                ).join(' '));
-            }
-        };
-        
-        console.error = (message: any, ...args: any[]) => {
-            outputChannel.appendLine(`ERROR: ${String(message)}`);
-            if (args.length > 0) {
-                outputChannel.appendLine(args.map(arg => 
-                    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-                ).join(' '));
-            }
-        };
+        if (!isMCPConfigured) {
+            const response = await vscode.window.showInformationMessage(
+                '🤖 Configure MCP for better Cursor AI integration?',
+                'Auto-Configure MCP',
+                'Use HTTP API Only',
+                'Manual Setup'
+            );
 
-        // Start the server
-        await cdpServer.startServer();
-        
-        // Try to connect to CDP
-        const connected = await cdpServer.connectToCDP();
-        
-        // Restore console
-        console.log = originalConsoleLog;
-        console.error = originalConsoleError;
-
-        if (connected) {
-            updateStatusBar(true);
-            vscode.window.showInformationMessage(
-                '✅ CDP Debug connected! Chrome and server are running.',
-                'Open Dashboard',
-                'View Output'
-            ).then(selection => {
-                if (selection === 'Open Dashboard') {
-                    openServerDashboard();
-                } else if (selection === 'View Output') {
-                    outputChannel.show();
+            if (response === 'Auto-Configure MCP') {
+                const configured = await mcpConfigurator.autoConfigureMCP();
+                if (configured) {
+                    vscode.window.showInformationMessage(
+                        '✅ MCP configured! Please restart Cursor to activate MCP tools.',
+                        'Restart Cursor',
+                        'Continue with HTTP'
+                    ).then(selection => {
+                        if (selection === 'Restart Cursor') {
+                            vscode.commands.executeCommand('workbench.action.reloadWindow');
+                        }
+                    });
+                } else {
+                    outputChannel.appendLine('⚠️ MCP auto-configuration failed, falling back to HTTP API');
                 }
-            });
-        } else {
-            throw new Error('Failed to connect to Chrome DevTools Protocol');
+            } else if (response === 'Manual Setup') {
+                const instructions = mcpConfigurator.getManualSetupInstructions();
+                const tempFile = path.join(require('os').tmpdir(), 'cdp-mcp-manual-setup.md');
+                fs.writeFileSync(tempFile, instructions);
+                vscode.workspace.openTextDocument(tempFile).then(doc => {
+                    vscode.window.showTextDocument(doc);
+                });
+            }
         }
+
+        // Step 3: Start both servers (hybrid approach)
+        outputChannel.appendLine('🔧 Starting CDP Servers (MCP + HTTP)...');
+        
+        let mcpStarted = false;
+        let httpStarted = false;
+
+        // Try to start MCP server
+        try {
+            const mcpServerPath = path.join(__dirname, 'cdp-mcp-server.js');
+            mcpProcess = spawn('node', [mcpServerPath], {
+                env: {
+                    ...process.env,
+                    CDP_PORT: '9222',
+                    TARGET_RE: '.*'
+                },
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+
+            mcpProcess.stdout?.on('data', (data) => {
+                outputChannel.appendLine(`MCP: ${data.toString()}`);
+            });
+
+            mcpProcess.stderr?.on('data', (data) => {
+                outputChannel.appendLine(`MCP Error: ${data.toString()}`);
+            });
+
+            mcpProcess.on('exit', (code) => {
+                outputChannel.appendLine(`MCP Server exited with code ${code}`);
+                mcpProcess = null;
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            mcpStarted = true;
+            outputChannel.appendLine('✅ MCP Server started');
+        } catch (error) {
+            outputChannel.appendLine(`⚠️ MCP Server failed to start: ${error}`);
+        }
+
+        // Step 4: Create shared CDP connection first
+        mcpServer = new CDPMCPServer(9222, '.*');
+        const connected = await mcpServer.connectToCDP();
+        
+        if (!connected) {
+            throw new Error('Failed to connect to Chrome DevTools Protocol. Make sure Chrome is running and has an active tab.');
+        }
+        
+        outputChannel.appendLine('✅ CDP connection established');
+
+        // Step 5: Start HTTP server with shared connection
+        try {
+            legacyServer = new CDPDebugServer(3100, 9222, '.*');
+            // Don't let HTTP server create its own CDP connection
+            await legacyServer.startServer();
+            // Force the HTTP server to use our established connection
+            await legacyServer.connectToCDP();
+            httpStarted = true;
+            outputChannel.appendLine('✅ HTTP API Server started on port 3100');
+        } catch (error) {
+            outputChannel.appendLine(`⚠️ HTTP Server failed to start: ${error}`);
+            // HTTP server failure is not critical since MCP is working
+        }
+
+        // Update status and show success message
+        updateStatusBar(true);
+        
+        let statusMessage = '✅ CDP Debug connected! ';
+        if (mcpStarted && httpStarted) {
+            statusMessage += 'MCP + HTTP servers running.';
+        } else if (mcpStarted) {
+            statusMessage += 'MCP server running.';
+        } else if (httpStarted) {
+            statusMessage += 'HTTP API server running.';
+        }
+
+        vscode.window.showInformationMessage(
+            statusMessage,
+            'View Output',
+            'Test Tools'
+        ).then(selection => {
+            if (selection === 'View Output') {
+                outputChannel.show();
+            } else if (selection === 'Test Tools') {
+                const testMessage = mcpStarted ? 
+                    'MCP tools available! Try: "Check for console errors"' :
+                    'HTTP API available! Try: "Check for console errors"';
+                vscode.window.showInformationMessage(testMessage);
+            }
+        });
 
     } catch (error) {
         outputChannel.appendLine(`❌ Error: ${error}`);
@@ -213,13 +295,31 @@ async function stopConnection() {
 }
 
 async function cleanup() {
-    if (cdpServer) {
+    if (mcpProcess) {
         try {
-            await cdpServer.disconnect();
+            mcpProcess.kill();
+            mcpProcess = null;
         } catch (error) {
-            console.error('Error disconnecting CDP server:', error);
+            console.error('Error stopping MCP process:', error);
         }
-        cdpServer = null;
+    }
+
+    if (mcpServer) {
+        try {
+            await mcpServer.disconnect();
+        } catch (error) {
+            console.error('Error disconnecting MCP server:', error);
+        }
+        mcpServer = null;
+    }
+
+    if (legacyServer) {
+        try {
+            await legacyServer.disconnect();
+        } catch (error) {
+            console.error('Error disconnecting legacy server:', error);
+        }
+        legacyServer = null;
     }
 
     if (chromeLauncher) {
@@ -232,9 +332,130 @@ async function cleanup() {
     }
 }
 
+async function copyMCPConfiguration(context: vscode.ExtensionContext) {
+    const mcpServerPath = path.join(context.extensionPath, 'out', 'cdp-mcp-server.js');
+    
+    const mcpConfig = {
+        "cursor-browser-inspector": {
+            "command": "node",
+            "args": [mcpServerPath],
+            "env": {
+                "CDP_PORT": "9222",
+                "TARGET_RE": ".*"
+            }
+        }
+    };
+
+    const configJson = JSON.stringify(mcpConfig, null, 2);
+    
+    // Copy to clipboard
+    await vscode.env.clipboard.writeText(configJson);
+    
+    // Show instructions
+    const instructions = `
+# ✅ MCP Configuration Copied to Clipboard!
+
+## Next Steps:
+
+1. **Open or create** ~/.cursor/mcp.json
+2. **Add this inside** the "mcpServers" object:
+
+${configJson}
+
+3. **Save the file**
+4. **Restart Cursor** completely
+5. **Test**: Ask Cursor "Check for console errors"
+
+## Complete Example:
+
+\`\`\`json
+{
+  "mcpServers": {
+    ${configJson.split('\n').slice(1, -1).join('\n    ')}
+    // ... your other MCP servers ...
+  }
+}
+\`\`\`
+
+## MCP File Locations:
+- **macOS/Linux**: ~/.cursor/mcp.json
+- **Windows**: %USERPROFILE%\\.cursor\\mcp.json
+
+The configuration is now in your clipboard - just paste it! 📋
+`;
+
+    // Show instructions in new document
+    const doc = await vscode.workspace.openTextDocument({
+        content: instructions,
+        language: 'markdown'
+    });
+    await vscode.window.showTextDocument(doc);
+    
+    vscode.window.showInformationMessage(
+        '✅ MCP configuration copied to clipboard!',
+        'Open MCP Setup Guide'
+    ).then(selection => {
+        if (selection === 'Open MCP Setup Guide') {
+            const guidePath = path.join(context.extensionPath, 'MCP-SETUP-GUIDE.md');
+            vscode.workspace.openTextDocument(guidePath).then(doc => {
+                vscode.window.showTextDocument(doc);
+            });
+        }
+    });
+}
+
+function showMCPConfigurationInstructions(mcpServerCommand: string) {
+    const instructions = `
+# Configure CDP Debug MCP Server in Cursor
+
+## Step 1: Open Cursor Settings
+1. Open Cursor Settings (Cmd/Ctrl + ,)
+2. Search for "MCP" or go to "Extensions" > "MCP"
+
+## Step 2: Add MCP Server
+Add this configuration:
+
+**Server Name**: cdp-debug-server
+**Command**: ${mcpServerCommand}
+**Args**: (leave empty)
+**Environment**: 
+  CDP_PORT=9222
+  TARGET_RE=.*
+
+## Step 3: Restart Cursor
+After adding the MCP server, restart Cursor for changes to take effect.
+
+## Step 4: Test
+Try asking: "Check for console errors" or "Show recent network requests"
+Cursor should now use the MCP tools automatically!
+`;
+
+    // Create a temporary file with instructions
+    const tempFile = path.join(require('os').tmpdir(), 'cdp-mcp-setup.md');
+    fs.writeFileSync(tempFile, instructions);
+    
+    // Open the instructions
+    vscode.workspace.openTextDocument(tempFile).then(doc => {
+        vscode.window.showTextDocument(doc);
+    });
+}
+
 function openServerDashboard() {
-    const url = 'http://localhost:3100/health';
-    vscode.env.openExternal(vscode.Uri.parse(url));
+    vscode.window.showInformationMessage(
+        'MCP Server runs on stdio (no HTTP dashboard). Use MCP tools instead!',
+        'Configure MCP',
+        'View Output',
+        'Learn More'
+    ).then(selection => {
+        if (selection === 'Configure MCP') {
+            const mcpServerPath = path.join(__dirname, 'cdp-mcp-server.js');
+            showMCPConfigurationInstructions(`node "${mcpServerPath}"`);
+        } else if (selection === 'View Output') {
+            outputChannel.show();
+        } else if (selection === 'Learn More') {
+            vscode.env.openExternal(vscode.Uri.parse('https://modelcontextprotocol.io/'));
+        }
+    });
 }
 
 function updateStatusBar(isRunning: boolean) {
@@ -252,158 +473,143 @@ function updateStatusBar(isRunning: boolean) {
 }
 
 function generateCursorRules(): string {
-    return `# CDP Debug Server - Automated Debugging
+    return `# CDP Debug Server - Hybrid MCP + HTTP Integration
 
 ## Context
-This project uses CDP Debug Server for automated browser debugging. The extension captures console logs and network requests from Chrome in real-time and exposes them via a local API.
+This project uses CDP Debug Server for automated browser debugging. The extension captures console logs and network requests from Chrome in real-time and exposes them via both MCP tools and HTTP API.
 
-## Server Information
-- **Server URL**: http://localhost:3100
-- **Chrome Debug Port**: 9222
-- **Status**: Check \`curl -s http://localhost:3100/health\`
+## Available Debugging Methods
 
-## Available Debugging Tools
+### Method 1: MCP Tools (Preferred)
+If MCP is configured, use these tools directly:
 
-When debugging frontend issues, you can automatically fetch debugging data from the local CDP server.
+**Core MCP Tools:**
+- \`check_connection_status\` - Verify CDP server connection
+- \`get_console_logs\` - Get browser console logs (params: limit, type)
+- \`get_network_requests\` - Get network requests (params: limit, url_pattern, method)
+- \`get_failed_requests\` - Get failed requests (params: limit, status_code)
+- \`get_server_stats\` - Get debugging statistics
+- \`clear_debug_data\` - Clear stored data
 
-### Quick Commands
+### Method 2: HTTP API (Fallback)
+If MCP tools are not available, use these HTTP endpoints:
 
-**Check server status:**
+**Server Status:**
 \`\`\`bash
 curl -s http://localhost:3100/health | jq
 \`\`\`
 
-**Get recent errors:**
+**Get Console Logs:**
 \`\`\`bash
 curl -s http://localhost:3100/api/logs?type=error&limit=10 | jq
-\`\`\`
-
-**Get console logs:**
-\`\`\`bash
 curl -s http://localhost:3100/api/logs?limit=20 | jq
 \`\`\`
 
-**Get network requests:**
+**Get Network Requests:**
 \`\`\`bash
 curl -s http://localhost:3100/api/network?limit=10 | jq
+curl -s http://localhost:3100/api/network?url=login&limit=5 | jq
 \`\`\`
 
-**Get failed API calls:**
+**Get Failed Requests:**
 \`\`\`bash
 curl -s http://localhost:3100/api/responses?status=404&limit=5 | jq
 curl -s http://localhost:3100/api/responses?status=500&limit=5 | jq
 \`\`\`
 
-**Filter by URL pattern:**
+**Clear Data:**
 \`\`\`bash
-curl -s http://localhost:3100/api/network?url=login&limit=5 | jq
-curl -s http://localhost:3100/api/network?url=api&limit=10 | jq
+curl -X POST http://localhost:3100/api/clear
 \`\`\`
 
 ## Debugging Workflow
 
+### Automatic Method Detection
+Try MCP tools first, fallback to HTTP API if MCP is not available.
+
 ### Before analyzing any bug:
-1. Verify server is running: \`curl -s http://localhost:3100/health\`
+1. **Check connection** (MCP: \`check_connection_status\` OR HTTP: \`curl -s http://localhost:3100/health\`)
 2. If not running, use VS Code command: "CDP: Open Chrome With Cursor Connection"
-3. Fetch recent errors if frontend issue
-4. Fetch network requests if API issue
-5. Analyze the real browser data
+3. Choose appropriate method based on availability
 
 ### When user reports an error:
-- Auto-fetch recent errors: \`curl -s http://localhost:3100/api/logs?type=error&limit=5\`
-- Check network activity: \`curl -s http://localhost:3100/api/network?limit=10\`
-- Look for 4xx/5xx responses
-- Analyze timing and request/response data
+**MCP Approach (Preferred):**
+- Use \`get_console_logs\` tool with \`type: "error"\` and \`limit: 5\`
+- Use \`get_failed_requests\` tool to find 4xx/5xx responses
+
+**HTTP Fallback:**
+- \`curl -s http://localhost:3100/api/logs?type=error&limit=5 | jq\`
+- \`curl -s http://localhost:3100/api/responses | jq '.responses[] | select(.status >= 400)'\`
 
 ### When debugging specific features (e.g., "login broken"):
-- Filter console logs: \`curl -s http://localhost:3100/api/logs | jq '.logs[] | select(.message | test("login"; "i"))'\`
-- Filter network requests: \`curl -s http://localhost:3100/api/network?url=login\`
-- Check for authentication errors
-- Verify request payloads and headers
+**MCP Approach (Preferred):**
+- Use \`get_console_logs\` tool and filter results for login-related messages
+- Use \`get_network_requests\` tool with \`url_pattern: "login"\`
 
-## API Endpoints Reference
+**HTTP Fallback:**
+- \`curl -s http://localhost:3100/api/logs | jq '.logs[] | select(.message | test("login"; "i"))'\`
+- \`curl -s http://localhost:3100/api/network?url=login&limit=5 | jq\`
 
-| Endpoint | Description | Parameters |
-|----------|-------------|------------|
-| \`GET /health\` | Server status and statistics | - |
-| \`GET /api/logs\` | Console logs | \`limit\`, \`type\` (error, warn, log, info, debug) |
-| \`GET /api/requests\` | Network requests | \`limit\`, \`method\`, \`url\` |
-| \`GET /api/responses\` | Network responses | \`limit\`, \`status\`, \`url\` |
-| \`GET /api/network\` | Request/response pairs | \`limit\`, \`url\` |
-| \`GET /api/stats\` | Aggregated statistics | - |
-| \`POST /api/clear\` | Clear all stored data | - |
+## MCP Tools Reference
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| \`check_connection_status\` | Server status and connection info | - |
+| \`get_console_logs\` | Console logs from browser | \`limit\`, \`type\` |
+| \`get_network_requests\` | Network requests with responses | \`limit\`, \`url_pattern\`, \`method\` |
+| \`get_failed_requests\` | Failed requests (4xx, 5xx) | \`limit\`, \`status_code\` |
+| \`get_server_stats\` | Aggregated statistics | - |
+| \`clear_debug_data\` | Clear all stored data | - |
 
 ## Examples
 
 ### Example 1: Debug Login Failure
-\`\`\`bash
-# Check for login-related errors
-curl -s http://localhost:3100/api/logs?type=error | jq '.logs[] | select(.message | test("login"; "i"))'
-
-# Get login API calls with full details
-curl -s http://localhost:3100/api/network?url=login&limit=5 | jq '.network[] | {
-  method: .request.method,
-  url: .request.url,
-  status: .response.status,
-  duration: .duration,
-  requestBody: .request.postData,
-  responseBody: .response.body
-}'
-\`\`\`
+1. Use \`get_console_logs\` tool with \`type: "error"\` to find JavaScript errors
+2. Use \`get_network_requests\` tool with \`url_pattern: "login"\` to get login API calls
+3. Analyze the response status, request payload, and response body
 
 ### Example 2: Find Slow Requests
-\`\`\`bash
-curl -s http://localhost:3100/api/network?limit=50 | jq '.network[] | select(.duration > 1000) | {
-  url: .request.url,
-  method: .request.method,
-  duration: .duration,
-  status: .response.status
-}'
-\`\`\`
+1. Use \`get_network_requests\` tool with \`limit: 50\`
+2. Look for requests with high \`duration\` values (>1000ms)
+3. Identify performance bottlenecks
 
 ### Example 3: Check CORS Issues
-\`\`\`bash
-curl -s http://localhost:3100/api/logs?type=error | jq '.logs[] | select(.message | test("cors"; "i"))'
-\`\`\`
+1. Use \`get_console_logs\` tool with \`type: "error"\`
+2. Look for messages containing "cors" or "cross-origin"
+3. Use \`get_failed_requests\` tool to see blocked requests
 
 ### Example 4: Monitor API Health
-\`\`\`bash
-# Get all API responses with status codes
-curl -s http://localhost:3100/api/network?url=api | jq '.network[] | {
-  endpoint: .request.url,
-  method: .request.method,
-  status: .response.status,
-  duration: .duration
-} | select(.status >= 400)'
-\`\`\`
+1. Use \`get_failed_requests\` tool to see all failed API calls
+2. Use \`get_network_requests\` tool with \`url_pattern: "api"\` to see API performance
+3. Check for patterns in failures
 
 ## Best Practices
 
-- **Always fetch real browser data** before suggesting fixes
-- The server stores the last 1000 items per type
+- **Always use MCP tools** to fetch real browser data before suggesting fixes
+- The server stores the last 1000 items per type (console logs, requests, responses)
 - Response bodies are captured for JSON responses < 50KB
-- Use \`jq\` for better JSON formatting and filtering
-- Clear old data when needed: \`curl -X POST http://localhost:3100/api/clear\`
+- Use \`clear_debug_data\` tool to clear old data when starting fresh debugging sessions
 - Server automatically reconnects if Chrome tab changes
+- MCP tools provide structured data - no JSON parsing needed
 
-## When to Use CDP Debug Server
+## When to Use MCP Tools
 
-Use this debugging data when:
-- User reports JavaScript errors or console issues
-- Debugging API request/response problems
-- Investigating performance issues (slow requests)
-- Understanding execution flow and timing
-- Tracking down race conditions
-- Analyzing network failures or CORS issues
-- Debugging authentication/authorization problems
+Use CDP Debug MCP tools when:
+- User reports JavaScript errors (\`get_console_logs\` with \`type: "error"\`)
+- Debugging API request/response issues (\`get_network_requests\`, \`get_failed_requests\`)
+- Investigating performance problems (\`get_network_requests\` to check duration)
+- Understanding execution flow (\`get_console_logs\` for application logs)
+- Tracking race conditions (\`get_network_requests\` to see request timing)
+- Analyzing authentication/authorization problems (\`get_failed_requests\` with status codes)
 
 ## Important Notes
 
-- The CDP server only captures data from the Chrome instance launched by the extension
-- Make sure to use the debug Chrome window for testing your application
-- The server automatically detects and connects to active tabs
-- Data is stored in memory and cleared when the server restarts
+- MCP tools provide direct access to browser debugging data via Model Context Protocol
+- Data is captured in real-time from the Chrome instance launched by the extension
 - All timestamps are in milliseconds since epoch
+- The server automatically detects and connects to active Chrome tabs
+- Data is stored in memory and cleared when the server restarts
+- Use \`check_connection_status\` tool to verify connection before debugging
 
 This gives you real context about what's happening in the browser instead of guessing based on code analysis alone.`;
 }

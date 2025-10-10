@@ -3,12 +3,13 @@
   "displayName": "Cursor Browser Inspector",
   "description": "Give Cursor AI direct access to Chrome DevTools. Automatically capture console logs, network requests, and errors for 10x faster debugging.",
   "version": "0.2.0",
-  "publisher": "codamasoftware",
+  "publisher": "cursor-tools",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
     "Debuggers",
+    "Testing",
     "Other"
   ],
   "keywords": [
@@ -31,9 +32,7 @@
     "performance",
     "web-development",
     "frontend",
-    "api-debugging",
-    "mcp",
-    "model-context-protocol"
+    "api-debugging"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -43,32 +42,33 @@
     "commands": [
       {
         "command": "cdp-debug.openChromeWithConnection",
-        "title": "CDP: Open Chrome With Cursor Connection"
+        "title": "CDP: Open Chrome With Cursor Connection",
+        "category": "CDP Debug"
       },
       {
         "command": "cdp-debug.stopConnection",
-        "title": "CDP: Stop Connection"
+        "title": "CDP: Stop Connection",
+        "category": "CDP Debug"
       },
       {
         "command": "cdp-debug.initProject",
-        "title": "CDP: Initialize Project"
+        "title": "CDP: Initialize Project",
+        "category": "CDP Debug"
       },
       {
         "command": "cdp-debug.openServerDashboard",
-        "title": "CDP: Open Server Dashboard"
-      },
-      {
-        "command": "cdp-debug.copyMCPConfig",
-        "title": "CDP: Copy MCP Configuration"
+        "title": "CDP: Open Server Dashboard",
+        "category": "CDP Debug"
       }
     ],
     "configuration": {
-      "title": "CDP Debug",
+      "title": "CDP Browser Inspector",
       "properties": {
         "cdpDebug.autoInitProjects": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically prompt to initialize CDP Debug for new projects"
+          "description": "Automatically prompt to initialize CDP Debug for new projects",
+          "order": 1
         }
       }
     }
@@ -77,7 +77,8 @@
     "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0",
@@ -104,7 +105,24 @@
   "license": "MIT",
   "icon": "icon.png",
   "galleryBanner": {
-    "color": "#1a1d2e",
+    "color": "#0066FF",
     "theme": "dark"
+  },
+  "badges": [
+    {
+      "url": "https://img.shields.io/badge/Cursor-AI%20Ready-blue",
+      "href": "https://cursor.com",
+      "description": "Cursor AI Ready"
+    },
+    {
+      "url": "https://img.shields.io/badge/Protocol-MCP%20%2B%20HTTP-green",
+      "href": "https://modelcontextprotocol.io",
+      "description": "Supports MCP and HTTP"
+    }
+  ],
+  "qna": "https://github.com/ncamaa/cdp-cursor-extension/discussions",
+  "sponsor": {
+    "url": "https://github.com/sponsors/ncamaa"
   }
 }
+
