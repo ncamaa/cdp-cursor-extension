@@ -1,8 +1,8 @@
 {
   "name": "cursor-browser-inspector",
   "displayName": "Cursor Browser Inspector",
-  "description": "Give Cursor AI direct access to Chrome DevTools. Automatically capture console logs, network requests, and errors for 10x faster debugging.",
-  "version": "0.2.0",
+  "description": "Give Cursor AI direct access to Chrome DevTools. Automatically capture console logs, network requests, and errors for 10x faster debugging. Now with browser automation!",
+  "version": "0.3.0",
   "publisher": "codamasoftware",
   "engines": {
     "vscode": "^1.80.0"

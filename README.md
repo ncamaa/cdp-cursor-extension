@@ -1,8 +1,10 @@
 # Cursor Browser Inspector
 
+> **🎮 NEW in v0.3.0: Browser Automation!** Cursor AI can now control the browser, test features, fill forms, click buttons, and capture screenshots. Ask Cursor to test your features and it will do it autonomously! [Learn more →](#-browser-automation-new)
+
 **Give Cursor AI direct access to Chrome DevTools. Automatically capture console logs, network requests, and errors for 10x faster debugging.**
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/ncamaa/cdp-cursor-extension)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://github.com/ncamaa/cdp-cursor-extension)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Cursor AI Ready](https://img.shields.io/badge/Cursor-AI%20Ready-blue)](https://cursor.com)
 
@@ -66,9 +68,10 @@ Use your app in the debug Chrome, then ask Cursor:
 - "Check for console errors"
 - "Show recent network requests"
 - "Why is my API call failing?"
-- "Find slow requests"
+- "Test if the login button works" ← **NEW: AI can test features!**
+- "Click the submit button and see what happens" ← **NEW: Browser control!**
 
-**Cursor automatically fetches the real browser data!**
+**Cursor automatically fetches data AND can control the browser!**
 
 ---
 
@@ -105,7 +108,7 @@ Developer: "My login is broken"
 ## 💡 **Key Features**
 
 ### **🤖 Dual Protocol Support**
-- **MCP (Model Context Protocol)**: Native Cursor AI integration
+- **MCP (Model Context Protocol)**: Native Cursor AI integration with 10 powerful tools
 - **HTTP API**: Universal fallback that always works
 
 ### **📊 Comprehensive Data Capture**
@@ -115,6 +118,13 @@ Developer: "My login is broken"
 - ✅ Performance timing
 - ✅ JavaScript exceptions with stack traces
 - ✅ Failed requests (4xx, 5xx status codes)
+
+### **🎮 Browser Automation (NEW!)**
+- ✅ Execute any JavaScript in browser context
+- ✅ Read page HTML and DOM structure
+- ✅ Capture screenshots for visual verification
+- ✅ Get page info (URL, title, dimensions)
+- ✅ Let AI control the browser and test features autonomously
 
 ### **🎯 Smart Features**
 - Auto-detects your active web app tab
@@ -187,6 +197,25 @@ Cursor: "Your request to https://api.external.com is
 blocked by CORS. The response is missing 
 'Access-Control-Allow-Origin' header. Add your origin 
 to the server's CORS configuration."
+```
+
+### **Example 4: Self-Testing Features (NEW!)** 🎮
+```
+You: "Test if the login form I just created works"
+
+Cursor (automatically tests):
+  1. Gets page HTML to find form elements
+  2. Fills email field via JavaScript
+  3. Fills password field via JavaScript
+  4. Clicks login button
+  5. Waits and checks console for errors
+  6. Checks network for API call
+  7. Captures screenshot of result
+  8. Analyzes everything
+
+Cursor: "✅ Login works! Form submitted successfully, 
+API returned 200 OK, user redirected to /dashboard. 
+No console errors. Screenshot shows success message."
 ```
 
 ---

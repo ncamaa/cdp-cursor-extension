@@ -159,6 +159,60 @@ class CDPMCPServer {
               properties: {},
             },
           },
+          {
+            name: 'execute_javascript',
+            description: 'Execute JavaScript code in the browser page context. Returns the result.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                code: {
+                  type: 'string',
+                  description: 'JavaScript code to execute',
+                },
+                return_value: {
+                  type: 'boolean',
+                  description: 'Whether to return the execution result',
+                  default: true,
+                },
+              },
+              required: ['code'],
+            },
+          },
+          {
+            name: 'get_page_html',
+            description: 'Get the HTML content of the current page or a specific element',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                selector: {
+                  type: 'string',
+                  description: 'CSS selector for specific element (optional)',
+                },
+              },
+            },
+          },
+          {
+            name: 'capture_screenshot',
+            description: 'Capture a screenshot of the current page',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                full_page: {
+                  type: 'boolean',
+                  description: 'Capture full scrollable page',
+                  default: false,
+                },
+              },
+            },
+          },
+          {
+            name: 'get_page_info',
+            description: 'Get current page information (URL, title, state)',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+            },
+          },
         ] satisfies Tool[],
       };
     });
@@ -186,6 +240,18 @@ class CDPMCPServer {
           
           case 'check_connection_status':
             return await this.handleCheckConnectionStatus(args);
+          
+          case 'execute_javascript':
+            return await this.handleExecuteJavaScript(args);
+          
+          case 'get_page_html':
+            return await this.handleGetPageHTML(args);
+          
+          case 'capture_screenshot':
+            return await this.handleCaptureScreenshot(args);
+          
+          case 'get_page_info':
+            return await this.handleGetPageInfo(args);
           
           default:
             throw new Error(`Unknown tool: ${name}`);
@@ -400,6 +466,175 @@ class CDPMCPServer {
     };
   }
 
+  private async handleExecuteJavaScript(args: any) {
+    if (!this.client) {
+      const connected = await this.connectToCDP();
+      if (!connected) {
+        return {
+          content: [{
+            type: 'text',
+            text: 'Error: Not connected to Chrome. Make sure Chrome is running with debugging enabled and has an active tab.',
+          }],
+        };
+      }
+    }
+    
+    const code = args?.code;
+    const returnValue = args?.return_value !== false;
+    
+    try {
+      const result = await this.client.Runtime.evaluate({
+        expression: code,
+        returnByValue: returnValue,
+        awaitPromise: true,
+      });
+      
+      if (result.exceptionDetails) {
+        return {
+          content: [{
+            type: 'text',
+            text: `JavaScript Error: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`,
+          }],
+        };
+      }
+      
+      return {
+        content: [{
+          type: 'text',
+          text: `Result: ${JSON.stringify(result.result.value, null, 2)}`,
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Execution failed: ${error}`,
+        }],
+      };
+    }
+  }
+
+  private async handleGetPageHTML(args: any) {
+    if (!this.client) {
+      const connected = await this.connectToCDP();
+      if (!connected) {
+        return {
+          content: [{
+            type: 'text',
+            text: 'Error: Not connected to Chrome.',
+          }],
+        };
+      }
+    }
+    
+    const selector = args?.selector;
+    
+    const code = selector 
+      ? `document.querySelector('${selector}')?.outerHTML || 'Element not found'`
+      : `document.documentElement.outerHTML`;
+    
+    try {
+      const result = await this.client.Runtime.evaluate({
+        expression: code,
+        returnByValue: true,
+      });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: result.result.value || 'No HTML content',
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Failed to get HTML: ${error}`,
+        }],
+      };
+    }
+  }
+
+  private async handleCaptureScreenshot(args: any) {
+    if (!this.client) {
+      const connected = await this.connectToCDP();
+      if (!connected) {
+        return {
+          content: [{
+            type: 'text',
+            text: 'Error: Not connected to Chrome.',
+          }],
+        };
+      }
+    }
+    
+    const fullPage = args?.full_page || false;
+    
+    try {
+      const screenshot = await this.client.Page.captureScreenshot({
+        format: 'png',
+        captureBeyondViewport: fullPage,
+      });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: `Screenshot captured (base64 PNG, ${screenshot.data.length} characters)\n\nFirst 200 chars: ${screenshot.data.substring(0, 200)}...\n\nTo view: Save the base64 data to a .png file or use an online base64 decoder.`,
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Screenshot failed: ${error}`,
+        }],
+      };
+    }
+  }
+
+  private async handleGetPageInfo(args: any) {
+    if (!this.client) {
+      const connected = await this.connectToCDP();
+      if (!connected) {
+        return {
+          content: [{
+            type: 'text',
+            text: 'Error: Not connected to Chrome.',
+          }],
+        };
+      }
+    }
+    
+    try {
+      const result = await this.client.Runtime.evaluate({
+        expression: `JSON.stringify({
+          url: window.location.href,
+          title: document.title,
+          readyState: document.readyState,
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY
+        })`,
+        returnByValue: true,
+      });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: `Page Info:\n${result.result.value}`,
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Failed to get page info: ${error}`,
+        }],
+      };
+    }
+  }
+
   private getLogStats(): Record<string, number> {
     const stats: Record<string, number> = {};
     for (const log of this.consoleLogs) {
@@ -604,7 +839,8 @@ class CDPMCPServer {
       
       await Promise.all([
         this.setupConsoleLogging(),
-        this.setupNetworkLogging()
+        this.setupNetworkLogging(),
+        this.client.Page.enable() // Enable Page domain for screenshots
       ]);
 
       console.log(`✅ Connected to Chrome DevTools Protocol`);

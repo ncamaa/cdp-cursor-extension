@@ -4,6 +4,60 @@ All notable changes to **Cursor Browser Inspector** will be documented in this f
 
 ---
 
+## [0.3.0] - 2025-10-10
+
+### 🎮 **Major Feature: Browser Automation**
+
+Cursor AI can now control the browser and test features autonomously!
+
+#### **Added - Browser Automation Tools**
+- **`execute_javascript`** - Execute any JavaScript in the browser page context
+  - Click buttons, fill forms, navigate, read state
+  - Full browser control via JavaScript
+  - Returns execution results or errors
+  
+- **`get_page_html`** - Get HTML of entire page or specific elements
+  - Understand page structure
+  - Find element selectors
+  - Verify content exists
+  
+- **`capture_screenshot`** - Take PNG screenshots of current page
+  - Visual verification of results
+  - Can capture full scrollable page
+  - Returns base64 encoded image
+  
+- **`get_page_info`** - Get page metadata (URL, title, dimensions, scroll)
+  - Verify navigation worked
+  - Check page state
+  - Track position in app
+
+#### **Enhanced Capabilities**
+- Cursor AI can now test features autonomously
+- AI can verify code changes by interacting with UI
+- AI can reproduce bugs by following user steps
+- AI can provide visual proof via screenshots
+- AI has full browser control through JavaScript primitives
+
+#### **Philosophy**
+Instead of 50 specific tools, we provide 4 universal primitives and let the AI figure out the rest. This makes the extension:
+- More flexible (AI not constrained)
+- More powerful (AI can do unexpected things)
+- Simpler to maintain (no workflow logic)
+- Future-proof (works with any web framework)
+
+#### **Documentation**
+- Added AUTOMATION-GUIDE.md (9.8 KB comprehensive guide)
+- Updated Cursor rules with automation examples
+- Added real-world testing scenarios
+- Enhanced README with automation highlights
+
+#### **MCP Server**
+- Total tools: 10 (6 debugging + 4 automation)
+- Size increase: 21KB → 29KB (+38% for full browser control)
+- Page domain enabled for screenshot support
+
+---
+
 ## [0.2.0] - 2025-10-10
 
 ### 🎉 **Major Release: Hybrid MCP + HTTP Integration**

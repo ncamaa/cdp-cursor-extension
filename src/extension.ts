@@ -483,13 +483,19 @@ This project uses CDP Debug Server for automated browser debugging. The extensio
 ### Method 1: MCP Tools (Preferred)
 If MCP is configured, use these tools directly:
 
-**Core MCP Tools:**
+**Core Debugging Tools:**
 - \`check_connection_status\` - Verify CDP server connection
 - \`get_console_logs\` - Get browser console logs (params: limit, type)
 - \`get_network_requests\` - Get network requests (params: limit, url_pattern, method)
 - \`get_failed_requests\` - Get failed requests (params: limit, status_code)
 - \`get_server_stats\` - Get debugging statistics
 - \`clear_debug_data\` - Clear stored data
+
+**Browser Automation Tools:**
+- \`execute_javascript\` - Run any JavaScript in the browser page (params: code, return_value)
+- \`get_page_html\` - Get HTML of page or specific element (params: selector)
+- \`capture_screenshot\` - Take screenshot of current page (params: full_page)
+- \`get_page_info\` - Get page URL, title, dimensions, scroll position
 
 ### Method 2: HTTP API (Fallback)
 If MCP tools are not available, use these HTTP endpoints:
@@ -583,24 +589,60 @@ Try MCP tools first, fallback to HTTP API if MCP is not available.
 2. Use \`get_network_requests\` tool with \`url_pattern: "api"\` to see API performance
 3. Check for patterns in failures
 
+### Example 5: Test Login Flow (Automation)
+1. Use \`get_page_html\` tool with \`selector: "#login-form"\` to find form structure
+2. Use \`execute_javascript\` with \`code: "document.querySelector('#email').value = 'test@example.com'"\`
+3. Use \`execute_javascript\` with \`code: "document.querySelector('#password').value = 'test123'"\`
+4. Use \`execute_javascript\` with \`code: "document.querySelector('#login-button').click()"\`
+5. Use \`get_console_logs\` to check for errors
+6. Use \`get_network_requests\` with \`url_pattern: "login"\` to verify API call
+7. Use \`capture_screenshot\` to verify result page
+
+### Example 6: Verify Feature After Code Change
+1. Use \`get_page_info\` to see current page state
+2. Use \`execute_javascript\` to interact with the feature
+3. Use \`capture_screenshot\` to verify visual result
+4. Use \`get_console_logs\` to check for new errors
+
 ## Best Practices
 
+### Debugging Data:
 - **Always use MCP tools** to fetch real browser data before suggesting fixes
 - The server stores the last 1000 items per type (console logs, requests, responses)
 - Response bodies are captured for JSON responses < 50KB
 - Use \`clear_debug_data\` tool to clear old data when starting fresh debugging sessions
 - Server automatically reconnects if Chrome tab changes
-- MCP tools provide structured data - no JSON parsing needed
+
+### Browser Automation:
+- **Use \`execute_javascript\`** to do anything: click, fill forms, navigate, read state
+- **Use \`get_page_html\`** to understand page structure and find selectors
+- **Use \`capture_screenshot\`** to verify visual results (AI can analyze images)
+- **Use \`get_page_info\`** to verify navigation and page state
+- Combine tools creatively - AI has full browser control via JavaScript
+
+### Automation Examples:
+- Click button: \`execute_javascript({ code: "document.querySelector('#btn').click()" })\`
+- Fill input: \`execute_javascript({ code: "document.querySelector('#email').value = 'test@test.com'" })\`
+- Read text: \`execute_javascript({ code: "document.querySelector('#username').textContent" })\`
+- Navigate: \`execute_javascript({ code: "window.location.href = '/dashboard'" })\`
+- Wait for element: \`execute_javascript({ code: "!!document.querySelector('#loaded')" })\` (retry until true)
 
 ## When to Use MCP Tools
 
-Use CDP Debug MCP tools when:
-- User reports JavaScript errors (\`get_console_logs\` with \`type: "error"\`)
-- Debugging API request/response issues (\`get_network_requests\`, \`get_failed_requests\`)
-- Investigating performance problems (\`get_network_requests\` to check duration)
-- Understanding execution flow (\`get_console_logs\` for application logs)
-- Tracking race conditions (\`get_network_requests\` to see request timing)
-- Analyzing authentication/authorization problems (\`get_failed_requests\` with status codes)
+### Debugging (Passive Observation):
+- User reports JavaScript errors → \`get_console_logs\` with \`type: "error"\`
+- Debugging API request/response issues → \`get_network_requests\`, \`get_failed_requests\`
+- Investigating performance problems → \`get_network_requests\` to check duration
+- Understanding execution flow → \`get_console_logs\` for application logs
+- Tracking race conditions → \`get_network_requests\` to see request timing
+- Analyzing authentication/authorization problems → \`get_failed_requests\` with status codes
+
+### Automation (Active Testing):
+- User asks to test a feature → \`execute_javascript\` to interact with UI
+- User wants to verify code changes → \`get_page_html\` + \`execute_javascript\` + \`capture_screenshot\`
+- User asks "does X work?" → Use automation tools to test and report back
+- User wants visual verification → \`capture_screenshot\` (AI can analyze images)
+- User asks to fill a form → \`execute_javascript\` to set values and submit
 
 ## Important Notes
 
